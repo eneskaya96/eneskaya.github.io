@@ -1,74 +1,101 @@
-# 📈 OpenBB Stock Viewer
+# 📈 Stock Viewer
 
-A tiny, free Streamlit dashboard that shows candlestick charts, upcoming
-earnings and the latest company news for any ticker — powered entirely
-by [OpenBB](https://github.com/OpenBB-finance/OpenBB) and the free
-Yahoo Finance provider.
+Small, fully free stock dashboard inspired by
+[OpenBB](https://github.com/OpenBB-finance/OpenBB).
 
-**No API key required.** You can run and deploy this without paying
-anything.
+Two flavours live side by side in this folder:
 
-## Features
+| File        | Purpose                                                          |
+| ----------- | ---------------------------------------------------------------- |
+| `build.py`  | **Static site generator.** Renders `index.html` with Plotly charts, stats and news for a preset list of tickers. Runs in GitHub Actions daily, deployed via GitHub Pages — **no server, no API key, no paid service**. |
+| `app.py`    | **Interactive Streamlit app** using the full OpenBB Python SDK. Lets you enter any ticker locally. |
 
-- 📊 Interactive candlestick chart with volume (Plotly, dark theme)
-- 📅 Upcoming earnings calendar
-- 📰 Latest company news
-- 🔍 Enter any ticker — `AAPL`, `MSFT`, `GOOGL`, `TSLA`, …
-- ⚡ Cached API calls so repeat loads are instant
+## 🌐 Live deployment
 
-## Quick start
+The static version is rebuilt by GitHub Actions every weekday after US
+market close and published through GitHub Pages at:
 
-```bash
-# 1. Clone / copy this folder
-cd openbb-stock-viewer
+**<https://eneskaya.github.io/openbb-stock-viewer/>**
 
-# 2. Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate     # on Windows: .venv\Scripts\activate
+Tickers currently tracked: **AAPL · MSFT · GOOGL · AMZN · NVDA · META · TSLA**.
 
-# 3. Install dependencies
-pip install -r requirements.txt
+To add or remove tickers, edit the `TICKERS` list at the top of
+`build.py` and push — the Action will rebuild on the next cron tick
+(or trigger it manually from the Actions tab).
 
-# 4. Run the app
-streamlit run app.py
+## 🧰 How it works
+
+```
+          ┌─────────────────────┐
+          │  GitHub Actions     │     weekdays @ 22:30 UTC
+          │  build-stock-viewer │──────────── cron ────────┐
+          └──────────┬──────────┘                          │
+                     │                                     │
+                     ▼                                     │
+          ┌─────────────────────┐                          │
+          │ python build.py     │                          │
+          │ yfinance → plotly   │                          │
+          │ → openbb-stock-     │                          │
+          │   viewer/index.html │                          │
+          └──────────┬──────────┘                          │
+                     │ git commit + push                   │
+                     ▼                                     │
+          ┌─────────────────────┐                          │
+          │ GitHub Pages        │ ◄────────────────────────┘
+          │ eneskaya.github.io/ │
+          │ openbb-stock-viewer │
+          └─────────────────────┘
 ```
 
-The app will open at <http://localhost:8501>.
+`build.py` uses [`yfinance`](https://pypi.org/project/yfinance/) — the
+same underlying data source OpenBB ships as its free default provider.
+We call it directly here to keep the Action footprint tiny (pulling in
+the full `openbb` meta-package in CI takes minutes for no real benefit
+in a static build).
 
-## Deploy for free
+`app.py` is kept for local experimentation with the full OpenBB SDK —
+you can try different providers (Nasdaq, FMP, Tiingo, …) and endpoints.
 
-This app is ready to deploy to
-[Streamlit Community Cloud](https://streamlit.io/cloud):
+## 🖥 Run locally
 
-1. Push this folder to a GitHub repo
-2. Connect the repo on Streamlit Community Cloud
-3. Point it at `app.py` — that's it
+### Static build (what production uses)
 
-## How it works
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install yfinance plotly pandas jinja2
+python build.py
+# Open index.html in your browser
+```
 
-The app uses three OpenBB endpoints via the `openbb` Python package:
+### Streamlit app (full OpenBB SDK, interactive)
 
-| Feature      | OpenBB call                           | Provider(s) tried              |
-| ------------ | ------------------------------------- | ------------------------------ |
-| Candlestick  | `obb.equity.price.historical()`       | `yfinance`                     |
-| Earnings     | `obb.equity.calendar.earnings()`      | `yfinance`, `nasdaq`, `seeking_alpha` |
-| News         | `obb.news.company()`                  | `yfinance`, `benzinga`, `tiingo` |
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+# → http://localhost:8501
+```
 
-Each call is wrapped in `@st.cache_data` so Streamlit re-uses the
-results between reruns (15 minutes for prices, 30 minutes for news,
-1 hour for earnings).
+## 💰 Is it really free?
 
-For earnings and news, the app tries several free providers in order
-because not every provider exposes data for every ticker.
+Yes:
 
-## Notes
+- **OpenBB** — AGPLv3 open source, free.
+- **yfinance** — free, no API key required.
+- **GitHub Actions** — free tier covers this easily (a few minutes
+  of Ubuntu runner per day).
+- **GitHub Pages** — free static hosting.
+- **Plotly.js** — BSD-licensed, loaded from CDN.
 
-- OpenBB itself is AGPLv3 — this app only **uses** the library, it does
-  not fork or redistribute it.
-- Some OpenBB extensions need API keys for premium providers (Polygon,
-  FMP, Tiingo, Benzinga, …). This app only relies on free, key-less
-  providers so it works out-of-the-box.
+Total cost: **$0**.
 
-## License
+## 📝 Notes
+
+- OpenBB itself is AGPLv3 — this project only **uses** its ideas and
+  data approach, it doesn't fork or redistribute OpenBB.
+- Premium providers (Polygon, FMP, Benzinga, …) need API keys. This
+  project only depends on free, key-less data, so it runs out of the
+  box.
+
+## 📄 License
 
 MIT
