@@ -12,6 +12,7 @@ footprint small makes the GitHub Action fast and free.
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +21,9 @@ import plotly.graph_objects as go
 import yfinance as yf
 from jinja2 import Template
 from plotly.subplots import make_subplots
+
+MAX_RETRIES = 4
+RETRY_BACKOFF = (2, 4, 8, 15)  # seconds between retries
 
 # ---------------------------------------------------------------------------
 # Config
@@ -42,21 +46,44 @@ OUTPUT_FILE = Path(__file__).parent / "index.html"
 # ---------------------------------------------------------------------------
 # Data fetching
 # ---------------------------------------------------------------------------
-def fetch_prices(symbol: str) -> pd.DataFrame:
-    """Download OHLCV data for a ticker."""
+def _download_once(symbol: str) -> pd.DataFrame:
     df = yf.download(
         symbol,
         period=PERIOD,
         interval=INTERVAL,
         progress=False,
         auto_adjust=False,
+        threads=False,
     )
-    if df.empty:
-        return df
-    # Flatten multi-index columns if yfinance returns them
+    if df is None or df.empty:
+        # Fall back to the Ticker.history() path — often succeeds when
+        # the bulk download endpoint is rate-limited.
+        df = yf.Ticker(symbol).history(
+            period=PERIOD, interval=INTERVAL, auto_adjust=False
+        )
+    if df is None or df.empty:
+        return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [c[0] for c in df.columns]
     return df
+
+
+def fetch_prices(symbol: str) -> pd.DataFrame:
+    """Download OHLCV data for a ticker with retries."""
+    last_error: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            df = _download_once(symbol)
+            if not df.empty:
+                return df
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            print(f"  retry {attempt + 1}/{MAX_RETRIES} for {symbol}: {exc}")
+        if attempt < MAX_RETRIES - 1:
+            time.sleep(RETRY_BACKOFF[attempt])
+    if last_error:
+        print(f"  final error for {symbol}: {last_error}")
+    return pd.DataFrame()
 
 
 def fetch_news(symbol: str, limit: int = 8) -> list[dict]:
@@ -382,7 +409,9 @@ HTML_TEMPLATE = Template(
 def main() -> None:
     ticker_data = []
     figures = {}
-    for symbol, name in TICKERS:
+    for idx, (symbol, name) in enumerate(TICKERS):
+        if idx > 0:
+            time.sleep(1.5)  # be gentle on Yahoo's rate limits
         print(f"→ Fetching {symbol} …")
         df = fetch_prices(symbol)
         if df.empty:
